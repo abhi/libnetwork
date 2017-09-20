@@ -1,3 +1,85 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: libnetwork
+  namespace: kube-system
+
+---
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: dnet-config
+  namespace: kube-system
+data:
+  cluster_store: "etcd://10.96.0.2:6666"
+
+---
+apiVersion: extensions/v1beta1
+kind: DaemonSet
+metadata:
+  name: libnetwork-etcd
+  namespace: kube-system
+  labels:
+    k8s-app: libnetwork-etcd
+spec:
+  template:
+    metadata:
+      labels:
+        k8s-app: libnetwork-etcd
+      annotations:
+        scheduler.alpha.kubernetes.io/critical-pod: ''
+    spec:
+      tolerations:
+      - key: node-role.kubernetes.io/master
+        effect: NoSchedule
+      nodeSelector:
+        node-role.kubernetes.io/master: ""
+      hostNetwork: true
+      containers:
+      - name: libnetwork-etcd
+        env:
+          - name: LIBNETWORK_ETCD_IP 
+            valueFrom:
+              fieldRef:
+                fieldPath: status.podIP
+        command: ["sh","-c"]
+        # Since ETCD will be running only on master for libnetwork using args to start the etcd instance
+        # in order to pass the environment variable for --advertise-client-urls 
+        args: ["/usr/local/bin/etcd --name=libnetwork-etcd --data-dir=/var/etcd/ --listen-client-urls=http://0.0.0.0:6666 --listen-peer-urls=http://0.0.0.0:6667 --advertise-client-urls=http://${LIBNETWORK_ETCD_IP}:6666"]
+        image: gcr.io/google_containers/etcd-amd64:3.0.17
+        livenessProbe:
+          failureThreshold: 8
+          httpGet:
+            host: 127.0.0.1
+            path: /health
+            port: 6666 
+            scheme: HTTP
+          initialDelaySeconds: 15
+          timeoutSeconds: 15
+        volumeMounts:
+        - name: var-etcd
+          mountPath: /var/lib/etcd
+      volumes:
+        - name: var-etcd
+          hostPath:
+            path: /var/libnetwork/etcd
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    k8s-app: libnetwork-etcd
+  name: libnetwork-etcd
+  namespace: kube-system
+spec:
+  selector:
+    k8s-app: libnetwork-etcd
+  clusterIP: 10.96.0.2
+  ports:
+    - port: 6666
+---
+
 kind: DaemonSet
 apiVersion: extensions/v1beta1
 metadata:
@@ -23,12 +105,17 @@ spec:
       serviceAccountName: libnetwork
       containers:
         - name: libnetwork-dnet
-          image: abhinandan03/dnet:latest
+          image: abhinandan03/libdnet:latest
           env:
-            - name: LIBNETWORK_ADDRESS 
+            - name: DNET_ADDRESS 
               valueFrom:
                 fieldRef:
                   fieldPath: status.podIP
+            - name: DNET_DISCOVERY
+              valueFrom:
+                configMapKeyRef:
+                  name: dnet-config
+                  key: cluster_store 
           securityContext:
             privileged: true
           volumeMounts:
@@ -38,16 +125,13 @@ spec:
             - mountPath: /var/run
               name: var-run
               readOnly: false
-            - mountPath: /lib/modules
-              name: lib-modules
-            - mountPath: /proc/
-              name: proc
-            - mountPath: /var/netns
-              name: netns 
+            - name: run
+              mountPath: /run/netns/
+
         - name: libnetwork-cniserver
-          image: abhinandan03/cniserver:latest
+          image: abhinandan03/cniserve:latest
           env:
-            - name: LIBNETWORK_ADDRESS
+            - name: DNET_ADDRESS
               valueFrom:
                 fieldRef:
                   fieldPath: status.podIP
@@ -67,8 +151,6 @@ spec:
             - mountPath: /var/run
               name: var-run
               readOnly: false
-            - mountPath: /lib/modules
-              name: lib-modules
 
       volumes:
         - name: cni-bin-dir
@@ -83,6 +165,8 @@ spec:
         - name: var-run
           hostPath:
             path: /var/run
-        - name: lib-modules
+        - name: run
           hostPath:
-            path: /lib/modules
+            path: /run/netns
+
+---
