@@ -1,0 +1,88 @@
+kind: DaemonSet
+apiVersion: extensions/v1beta1
+metadata:
+  name: libnetwork 
+  namespace: kube-system
+  labels:
+    k8s-app: libnetwork 
+spec:
+  selector:
+    matchLabels:
+      k8s-app: libnetwork
+  template:
+    metadata:
+      labels:
+        k8s-app: libnetwork 
+      annotations:
+        scheduler.alpha.kubernetes.io/critical-pod: ''
+        scheduler.alpha.kubernetes.io/tolerations: |
+          [{"key":"CriticalAddonsOnly", "operator":"Exists"}]
+    spec:
+      hostNetwork: true
+      hostPID: true
+      serviceAccountName: libnetwork
+      containers:
+        - name: libnetwork-dnet
+          image: abhinandan03/dnet:latest
+          env:
+            - name: LIBNETWORK_ADDRESS 
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+          securityContext:
+            privileged: true
+          volumeMounts:
+            - mountPath: /home/libnetwork/
+              name: var-libnetwork
+              readOnly: false
+            - mountPath: /var/run
+              name: var-run
+              readOnly: false
+            - mountPath: /lib/modules
+              name: lib-modules
+            - mountPath: /proc/
+              name: proc
+            - mountPath: /var/netns
+              name: netns 
+        - name: libnetwork-cniserver
+          image: abhinandan03/cniserver:latest
+          env:
+            - name: LIBNETWORK_ADDRESS
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+          securityContext:
+            privileged: true
+
+          volumeMounts:              
+            - mountPath: /opt/cni/bin
+              name: cni-bin-dir
+              readOnly: false
+            - mountPath: /etc/cni/net.d/
+              name: etc-cni-dir
+              readOnly: false
+            - mountPath: /home/libnetwork/
+              name: var-libnetwork
+              readOnly: false
+            - mountPath: /var/run
+              name: var-run
+              readOnly: false
+            - mountPath: /lib/modules
+              name: lib-modules
+
+      volumes:
+        - name: cni-bin-dir
+          hostPath:
+            path: /opt/cni/bin
+        - name: etc-cni-dir
+          hostPath:
+            path: /etc/cni/net.d/
+        - name: var-libnetwork
+          hostPath:
+            path: /var/libnetwork/
+        - name: var-run
+          hostPath:
+            path: /var/run
+        - name: lib-modules
+          hostPath:
+            path: /lib/modules
