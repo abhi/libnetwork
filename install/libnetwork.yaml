@@ -41,7 +41,7 @@ spec:
       serviceAccountName: libnetwork
       containers:
         - name: libnetwork-dnet
-          image: abhinandan03/dnet:test
+          image: abhinandan03/libdnet:test2
           env:
             - name: DNET_ADDRESS
               valueFrom:
@@ -65,7 +65,7 @@ spec:
               mountPath: /run/netns/
 
         - name: libnetwork-cniserver
-          image: abhinandan03/cniserver:test
+          image: abhinandan03/cniserver:test2
           env:
             - name: DNET_ADDRESS
               valueFrom:

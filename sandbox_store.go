@@ -191,6 +191,7 @@ func (sb *sandbox) storeDelete() error {
 }
 
 func (c *controller) sandboxCleanup(activeSandboxes map[string]interface{}) {
+	logrus.Infof("Abhi: sandboxCleanup: %+v ", activeSandboxes)
 	store := c.getStore(datastore.LocalScope)
 	if store == nil {
 		logrus.Error("Could not find local scope store while trying to cleanup sandboxes")
@@ -210,7 +211,7 @@ func (c *controller) sandboxCleanup(activeSandboxes map[string]interface{}) {
 
 	for _, kvo := range kvol {
 		sbs := kvo.(*sbState)
-
+		logrus.Infof("Abhi sbs: %+v ", sbs)
 		sb := &sandbox{
 			id:                 sbs.ID,
 			controller:         sbs.c,
@@ -231,6 +232,7 @@ func (c *controller) sandboxCleanup(activeSandboxes map[string]interface{}) {
 			}
 		}
 
+		logrus.Infof("Abhi sbs: %+v ", sbs)
 		msg := " for cleanup"
 		create := true
 		isRestore := false
@@ -244,6 +246,7 @@ func (c *controller) sandboxCleanup(activeSandboxes map[string]interface{}) {
 			create = !sb.config.useDefaultSandBox
 			heap.Init(&sb.endpoints)
 		}
+		logrus.Infof("Abhi sandbox cleanup isRestore: %+v ", isRestore)
 		sb.osSbox, err = osl.NewSandbox(sb.Key(), create, isRestore)
 		if err != nil {
 			logrus.Errorf("failed to create osl sandbox while trying to restore sandbox %s%s: %v", sb.ID()[0:7], msg, err)

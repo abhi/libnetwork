@@ -7,19 +7,23 @@ import (
 	"io/ioutil"
 	"net"
 	"net/http"
+	"strings"
 
 	"github.com/containernetworking/cni/pkg/skel"
 	"github.com/containernetworking/cni/pkg/types"
 	"github.com/containernetworking/cni/pkg/types/current"
 	"github.com/containernetworking/plugins/pkg/ns"
 	log "github.com/sirupsen/logrus"
+
+	"github.com/docker/libnetwork/client"
 )
 
 const (
-	AddPodUrl   = "/AddPod"
-	DelPodUrl   = "/DelPod"
-	DnetCNISock = "/var/run/cniserver.sock"
-	PluginPath  = "/run/libnetwork"
+	AddPodUrl     = "/AddPod"
+	DelPodUrl     = "/DelPod"
+	GetActivePods = "/ActivePods"
+	DnetCNISock   = "/var/run/cniserver.sock"
+	PluginPath    = "/run/libnetwork"
 )
 
 type DnetCniClient struct {
@@ -32,6 +36,7 @@ type CniInfo struct {
 	NetNS       string
 	IfName      string
 	NetConf     types.NetConf
+	Metadata    map[string]string
 }
 
 func unixDial(proto, addr string) (conn net.Conn, err error) {
@@ -128,6 +133,29 @@ func (l *DnetCniClient) TearDownPod(args *skel.CmdArgs) error {
 	return nil
 }
 
+// GetActivePods returns a list of active pods and their sandboxIDs
+func (l *DnetCniClient) GetActiveSandboxes() (map[string]client.SandboxCreate, error) {
+	log.Infof("Requesting for for active sandboxes")
+	var sandboxes map[string]client.SandboxCreate
+	url := l.url + GetActivePods
+	r, err := l.httpClient.Get(url)
+	if err != nil {
+		return nil, fmt.Errorf("failed during http get :%v", err)
+	}
+	defer r.Body.Close()
+	response, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		return nil, err
+	}
+	fmt.Printf("RESPONSE: {%+v} \n", response)
+	err = json.Unmarshal(response, &sandboxes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode http response: %v", err)
+	}
+
+	return sandboxes, nil
+}
+
 func validatePodNetworkInfo(args *skel.CmdArgs) (*CniInfo, error) {
 	rt := new(CniInfo)
 	if args.ContainerID == "" {
@@ -154,5 +182,21 @@ func validatePodNetworkInfo(args *skel.CmdArgs) (*CniInfo, error) {
 		return nil, fmt.Errorf("failed to unmarshal network configuration :%v", err)
 	}
 	rt.NetConf = netConf.NetConf
+	if args.Args != "" {
+		rt.Metadata = getMetadataFromArgs(args.Args)
+	}
 	return rt, nil
+}
+
+func getMetadataFromArgs(args string) map[string]string {
+	m := make(map[string]string)
+	for _, a := range strings.Split(args, ";") {
+		if strings.Contains(a, "=") {
+			kvPair := strings.Split(a, "=")
+			m[strings.TrimSpace(kvPair[0])] = strings.TrimSpace(kvPair[1])
+		} else {
+			m[a] = ""
+		}
+	}
+	return m
 }

@@ -16,14 +16,18 @@ import (
 
 	"github.com/BurntSushi/toml"
 	"github.com/codegangsta/cli"
+	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/opts"
 	"github.com/docker/docker/pkg/discovery"
 	"github.com/docker/docker/pkg/reexec"
-
-	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/pkg/term"
+	"github.com/gorilla/mux"
+	"github.com/sirupsen/logrus"
+	"golang.org/x/net/context"
+
 	"github.com/docker/libnetwork"
 	"github.com/docker/libnetwork/api"
+	"github.com/docker/libnetwork/client"
 	"github.com/docker/libnetwork/cluster"
 	"github.com/docker/libnetwork/config"
 	"github.com/docker/libnetwork/datastore"
@@ -31,10 +35,8 @@ import (
 	"github.com/docker/libnetwork/netlabel"
 	"github.com/docker/libnetwork/netutils"
 	"github.com/docker/libnetwork/options"
+	"github.com/docker/libnetwork/pkg/cniapi"
 	"github.com/docker/libnetwork/types"
-	"github.com/gorilla/mux"
-	"github.com/sirupsen/logrus"
-	"golang.org/x/net/context"
 )
 
 const (
@@ -279,6 +281,22 @@ func (d *dnetConnection) dnetDaemon(cfgFile string) error {
 
 	cOptions = append(cOptions, config.OptionDriverConfig("bridge", bridgeOption))
 
+	c := cniapi.NewDnetCniClient()
+	// If this is a restore ,then fetch active sandboxes from api server.
+	var sbOptions config.Option
+	x := time.Duration(2)
+	for {
+		sbOptions, err = fetchActiveSandboxes(c)
+		if err == nil {
+			break
+		}
+		logrus.Errorf("failed to fetch active sandbox: %b", err)
+		time.Sleep(x * time.Second)
+		x = x * 2
+	}
+	if sbOptions != nil {
+		cOptions = append(cOptions, sbOptions)
+	}
 	controller, err := libnetwork.New(cOptions...)
 	if err != nil {
 		fmt.Println("Error starting dnetDaemon :", err)
@@ -459,4 +477,44 @@ func ipamOption(bridgeName string) libnetwork.NetworkOption {
 		return libnetwork.NetworkOptionIpam("default", "", []*libnetwork.IpamConf{ipamV4Conf}, nil, nil)
 	}
 	return nil
+}
+
+/*
+func fetchActiveSandboxes(clientset *kubernetes.Clientset) error {
+	activeSandboxes := []string{}
+	pods, err := clientset.CoreV1().Pods("").List(metav1.ListOptions{})
+	if err != nil {
+		return err
+	}
+	for _, pod := range pods.Items {
+		if !pod.Spec.HostNetwork {
+			activeSandboxes = append(activeSandboxes, pod.Name)
+			fmt.Printf("POD:{%+v} \n", pod)
+		}
+	}
+
+	fmt.Printf("%+v , err:%v \n", activeSandboxes, err)
+	return nil
+}
+*/
+
+func fetchActiveSandboxes(c *cniapi.DnetCniClient) (config.Option, error) {
+	sbs, err := c.GetActiveSandboxes()
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch active sandboxes: %v", err)
+	}
+	result := make(map[string]interface{})
+	for sb, config := range sbs {
+		result[sb] = parseConfigOptions(config)
+	}
+
+	return config.OptionActiveSandboxes(result), nil
+}
+
+func parseConfigOptions(sc client.SandboxCreate) []libnetwork.SandboxOption {
+	var sbOptions []libnetwork.SandboxOption
+	if sc.UseExternalKey {
+		sbOptions = append(sbOptions, libnetwork.OptionUseExternalKey())
+	}
+	return sbOptions
 }
