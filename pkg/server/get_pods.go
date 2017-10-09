@@ -23,7 +23,7 @@ func (c *CniService) getPods() (map[string]interface{}, error) {
 			fmt.Printf("POD:{%+v} \n", pod)
 			meta, err := c.getCniMetadataFromStore(pod.Name, pod.Namespace)
 			if err == nil && meta != nil {
-				activeSandboxes[meta.SandboxID] = meta.SandboxConfig
+				activeSandboxes[meta.SandboxID] = meta.SandboxMeta
 			}
 		}
 	}

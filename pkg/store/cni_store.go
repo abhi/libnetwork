@@ -3,9 +3,11 @@ package store
 import (
 	"encoding/json"
 
-	"github.com/docker/libnetwork/client"
+	"github.com/docker/libnetwork/api"
 	"github.com/docker/libnetwork/datastore"
 	"github.com/sirupsen/logrus"
+
+	"github.com/docker/libnetwork/client"
 )
 
 const (
@@ -18,7 +20,7 @@ type CniStore struct {
 	InfraContainerID string
 	SandboxID        string
 	EndpointID       string
-	SandboxConfig    client.SandboxCreate // TODO find a better data type/restructure
+	SandboxMeta      api.SandboxMetadata
 	dbIndex          uint64
 	dbExists         bool
 }
@@ -80,11 +82,28 @@ func (cs *CniStore) CopyTo(o datastore.KVObject) error {
 	dstCs.InfraContainerID = cs.InfraContainerID
 	dstCs.SandboxID = cs.SandboxID
 	dstCs.EndpointID = cs.EndpointID
-	dstCs.SandboxConfig = cs.SandboxConfig
+	dstCs.SandboxMeta = cs.SandboxMeta
 	return nil
 }
 
 // DataScope method returns the storage scope of the datastore
 func (cs *CniStore) DataScope() string {
 	return datastore.LocalScope
+}
+
+func CopySandboxMetadata(sbConfig client.SandboxCreate, externalKey string) api.SandboxMetadata {
+	var meta api.SandboxMetadata
+	meta.ContainerID = sbConfig.ContainerID
+	meta.HostName = sbConfig.HostName
+	meta.DomainName = sbConfig.DomainName
+	meta.HostsPath = sbConfig.HostsPath
+	meta.ResolvConfPath = sbConfig.ResolvConfPath
+	meta.DNS = sbConfig.DNS
+	meta.UseExternalKey = sbConfig.UseExternalKey
+	meta.UseDefaultSandbox = sbConfig.UseDefaultSandbox
+	meta.ExposedPorts = sbConfig.ExposedPorts
+	meta.PortMapping = sbConfig.PortMapping
+	meta.ExternalKey = externalKey
+	//TODO: skipped extrahosts
+	return meta
 }

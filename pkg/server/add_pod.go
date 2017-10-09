@@ -33,7 +33,7 @@ func addPod(w http.ResponseWriter, r *http.Request, c *CniService, vars map[stri
 
 	log.Infof("Received add pod request %+v", cniInfo)
 	// Create a Sandbox
-	sbConfig, sbID, err := c.createSandbox(cniInfo.ContainerID, cniInfo.NetNS)
+	sbConfig, sbID, err := c.createSandbox(cniInfo.ContainerID)
 	if err != nil {
 		return cniInfo, fmt.Errorf("failed to create sandbox for %q: %v", cniInfo.ContainerID, err)
 	}
@@ -76,7 +76,7 @@ func addPod(w http.ResponseWriter, r *http.Request, c *CniService, vars map[stri
 		InfraContainerID: cniInfo.Metadata["K8S_POD_INFRA_CONTAINER_ID"],
 		SandboxID:        sbID,
 		EndpointID:       ep.ID,
-		SandboxConfig:    sbConfig,
+		SandboxMeta:      cnistore.CopySandboxMetadata(sbConfig, cniInfo.NetNS),
 	}
 	if err := c.writeToStore(cs); err != nil {
 		return nil, fmt.Errorf("failed to write to store: %v", err)
@@ -102,7 +102,7 @@ func addPod(w http.ResponseWriter, r *http.Request, c *CniService, vars map[stri
 
 }
 
-func (c *CniService) createSandbox(ContainerID, netns string) (client.SandboxCreate, string, error) {
+func (c *CniService) createSandbox(ContainerID string) (client.SandboxCreate, string, error) {
 	sc := client.SandboxCreate{ContainerID: ContainerID, UseExternalKey: true}
 	obj, _, err := netutils.ReadBody(c.dnetConn.HttpCall("POST", "/sandboxes", sc, nil))
 	if err != nil {

@@ -27,7 +27,6 @@ import (
 
 	"github.com/docker/libnetwork"
 	"github.com/docker/libnetwork/api"
-	"github.com/docker/libnetwork/client"
 	"github.com/docker/libnetwork/cluster"
 	"github.com/docker/libnetwork/config"
 	"github.com/docker/libnetwork/datastore"
@@ -504,17 +503,20 @@ func fetchActiveSandboxes(c *cniapi.DnetCniClient) (config.Option, error) {
 		return nil, fmt.Errorf("failed to fetch active sandboxes: %v", err)
 	}
 	result := make(map[string]interface{})
-	for sb, config := range sbs {
-		result[sb] = parseConfigOptions(config)
+	for sb, meta := range sbs {
+		result[sb] = parseConfigOptions(meta)
 	}
 
 	return config.OptionActiveSandboxes(result), nil
 }
 
-func parseConfigOptions(sc client.SandboxCreate) []libnetwork.SandboxOption {
+func parseConfigOptions(meta api.SandboxMetadata) []libnetwork.SandboxOption {
 	var sbOptions []libnetwork.SandboxOption
-	if sc.UseExternalKey {
+	if meta.UseExternalKey {
 		sbOptions = append(sbOptions, libnetwork.OptionUseExternalKey())
+	}
+	if meta.ExternalKey != "" {
+		sbOptions = append(sbOptions, libnetwork.OptionExternalKey(meta.ExternalKey))
 	}
 	return sbOptions
 }

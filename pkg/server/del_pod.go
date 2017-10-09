@@ -32,7 +32,7 @@ func deletePod(w http.ResponseWriter, r *http.Request, c *CniService, vars map[s
 	epID := cniMetadata.EndpointID
 
 	if err = c.endpointLeave(sbID, epID); err != nil {
-		fmt.Errorf("failed to leave endpoint from sandbox for container:%q,sandbox:%q,endpoint:%q, error:%v", cniInfo.ContainerID, sbID, epID, err)
+		return nil, fmt.Errorf("failed to leave endpoint from sandbox for container:%q,sandbox:%q,endpoint:%q, error:%v", cniInfo.ContainerID, sbID, epID, err)
 	}
 
 	if err = c.deleteEndpoint(epID); err != nil {

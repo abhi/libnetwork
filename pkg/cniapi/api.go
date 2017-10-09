@@ -15,7 +15,7 @@ import (
 	"github.com/containernetworking/plugins/pkg/ns"
 	log "github.com/sirupsen/logrus"
 
-	"github.com/docker/libnetwork/client"
+	"github.com/docker/libnetwork/api"
 )
 
 const (
@@ -134,9 +134,9 @@ func (l *DnetCniClient) TearDownPod(args *skel.CmdArgs) error {
 }
 
 // GetActivePods returns a list of active pods and their sandboxIDs
-func (l *DnetCniClient) GetActiveSandboxes() (map[string]client.SandboxCreate, error) {
+func (l *DnetCniClient) GetActiveSandboxes() (map[string]api.SandboxMetadata, error) {
 	log.Infof("Requesting for for active sandboxes")
-	var sandboxes map[string]client.SandboxCreate
+	var sandboxes map[string]api.SandboxMetadata
 	url := l.url + GetActivePods
 	r, err := l.httpClient.Get(url)
 	if err != nil {
