@@ -67,10 +67,7 @@ func addPod(w http.ResponseWriter, r *http.Request, c *CniService, vars map[stri
 			}
 		}
 	}()
-
-	c.endpointIDStore[cniInfo.ContainerID] = ep.ID
-	c.sandboxIDStore[cniInfo.ContainerID] = sbID
-	cs := &cnistore.CniStore{
+	cs := &cnistore.CniMetadata{
 		PodName:          cniInfo.Metadata["K8S_POD_NAME"],
 		PodNamespace:     cniInfo.Metadata["K8S_POD_NAMESPACE"],
 		InfraContainerID: cniInfo.Metadata["K8S_POD_INFRA_CONTAINER_ID"],
@@ -79,7 +76,7 @@ func addPod(w http.ResponseWriter, r *http.Request, c *CniService, vars map[stri
 		SandboxMeta:      cnistore.CopySandboxMetadata(sbConfig, cniInfo.NetNS),
 	}
 	if err := c.writeToStore(cs); err != nil {
-		return nil, fmt.Errorf("failed to write to store: %v", err)
+		return nil, fmt.Errorf("failed to write cni metadata to store: %v", err)
 	}
 	result.Interfaces = append(result.Interfaces, &current.Interface{Name: "eth1", Mac: ep.MacAddress.String()})
 	if !reflect.DeepEqual(ep.Address, (net.IPNet{})) {
@@ -96,7 +93,7 @@ func addPod(w http.ResponseWriter, r *http.Request, c *CniService, vars map[stri
 			Gateway: ep.GatewayIPv6,
 		})
 	}
-	//TODO (Abhi): Point IPs to the interface index
+	//TODO : Point IPs to the interface index
 
 	return result, err
 
@@ -158,7 +155,6 @@ func (c *CniService) networkExists(networkName string) bool {
 	if err != nil {
 		return false
 	}
-	fmt.Printf("%s network exists \n", networkName)
 	return (len(list) != 0)
 }
 

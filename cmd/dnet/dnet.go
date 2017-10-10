@@ -478,25 +478,6 @@ func ipamOption(bridgeName string) libnetwork.NetworkOption {
 	return nil
 }
 
-/*
-func fetchActiveSandboxes(clientset *kubernetes.Clientset) error {
-	activeSandboxes := []string{}
-	pods, err := clientset.CoreV1().Pods("").List(metav1.ListOptions{})
-	if err != nil {
-		return err
-	}
-	for _, pod := range pods.Items {
-		if !pod.Spec.HostNetwork {
-			activeSandboxes = append(activeSandboxes, pod.Name)
-			fmt.Printf("POD:{%+v} \n", pod)
-		}
-	}
-
-	fmt.Printf("%+v , err:%v \n", activeSandboxes, err)
-	return nil
-}
-*/
-
 func fetchActiveSandboxes(c *cniapi.DnetCniClient) (config.Option, error) {
 	sbs, err := c.GetActiveSandboxes()
 	if err != nil {

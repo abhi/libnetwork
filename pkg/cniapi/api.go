@@ -58,7 +58,7 @@ func NewDnetCniClient() *DnetCniClient {
 // SetupPod setups up the sandbox and endpoint for the infra container in a pod
 func (l *DnetCniClient) SetupPod(args *skel.CmdArgs) (*current.Result, error) {
 	var data current.Result
-	log.Infof("Received Setup Pod %+v", args)
+	log.Infof("Sending Setup Pod request %+v", args)
 	podNetInfo, err := validatePodNetworkInfo(args)
 	if err != nil {
 		return nil, fmt.Errorf("failed to valid cni arguments, error: %v", err)
@@ -112,10 +112,10 @@ func (l *DnetCniClient) SetupPod(args *skel.CmdArgs) (*current.Result, error) {
 // TearDownPod tears the sandbox and endpoint created for the infra
 // container in the pod.
 func (l *DnetCniClient) TearDownPod(args *skel.CmdArgs) error {
-	log.Infof("Received Teardown Pod request %+v", args)
+	log.Infof("Sending Teardown Pod request %+v", args)
 	podNetInfo, err := validatePodNetworkInfo(args)
 	if err != nil {
-		return fmt.Errorf("failed to valid cni arguments, error: %v", err)
+		return fmt.Errorf("failed to validate cni arguments, error: %v", err)
 	}
 	buf, err := json.Marshal(podNetInfo)
 	if err != nil {
@@ -126,10 +126,8 @@ func (l *DnetCniClient) TearDownPod(args *skel.CmdArgs) error {
 	r, err := l.httpClient.Post(url, "application/json", body)
 	defer r.Body.Close()
 	if err != nil {
-		fmt.Printf("%v \n", err)
 		return err
 	}
-
 	return nil
 }
 
@@ -147,7 +145,6 @@ func (l *DnetCniClient) GetActiveSandboxes() (map[string]api.SandboxMetadata, er
 	if err != nil {
 		return nil, err
 	}
-	fmt.Printf("RESPONSE: {%+v} \n", response)
 	err = json.Unmarshal(response, &sandboxes)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode http response: %v", err)

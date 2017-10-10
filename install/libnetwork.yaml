@@ -9,7 +9,7 @@ metadata:
 kind: ConfigMap
 apiVersion: v1
 metadata:
-  name: dnet-config 
+  name: dnet-config
   namespace: kube-system
 data:
   cluster_store: "etcd://10.96.0.2:6666"
@@ -52,6 +52,8 @@ spec:
                 configMapKeyRef:
                   name: dnet-config
                   key: cluster_store
+            - name: DNET_PROVIDER_INTERFACE
+              value: "cni"
           securityContext:
             privileged: true
           volumeMounts:

@@ -28,14 +28,10 @@ const (
 )
 
 type CniService struct {
-	//TODO k8sClient *APIClient
-
-	listenPath      string
-	dnetConn        *netutils.HttpConnection
-	sandboxIDStore  map[string]string // containerID to sandboxID mapping
-	endpointIDStore map[string]string // containerID to endpointID mapping
-	store           datastore.DataStore
-	k8ClientSet     *kubernetes.Clientset
+	listenPath  string
+	dnetConn    *netutils.HttpConnection
+	store       datastore.DataStore
+	k8ClientSet *kubernetes.Clientset
 }
 
 func NewCniService(sock string, dnetIP string, dnetPort string) (*CniService, error) {
@@ -43,15 +39,12 @@ func NewCniService(sock string, dnetIP string, dnetPort string) (*CniService, er
 	c := new(CniService)
 	c.dnetConn = &netutils.HttpConnection{Addr: dnetUrl, Proto: "tcp"}
 	c.listenPath = sock
-	c.sandboxIDStore = make(map[string]string)
-	c.endpointIDStore = make(map[string]string)
 	return c, nil
 }
 
 // InitCniService initializes the cni server
 func (c *CniService) InitCniService(serverCloseChan chan struct{}) error {
 	log.Infof("Starting CNI server")
-	// Create http handlers for add and delete pod
 	router := mux.NewRouter()
 	t := router.Methods("POST").Subrouter()
 	t.HandleFunc(cniapi.AddPodUrl, MakeHTTPHandler(c, addPod))
@@ -65,20 +58,17 @@ func (c *CniService) InitCniService(serverCloseChan chan struct{}) error {
 			http.Error(w, "failed to fetch active sandboxes1", http.StatusInternalServerError)
 			return
 		}
-		fmt.Printf("Response: %v \n", resp)
-		jsonData, err := json.Marshal(resp)
+		data, err := json.Marshal(resp)
 		if err != nil {
 			http.Error(w, "failed to fetch active sandboxes2", http.StatusInternalServerError)
 		}
-		fmt.Printf("JSON DATA:%v \n", jsonData)
 		w.Header().Set("Content-Type", "application/json")
-		w.Write(jsonData)
+		w.Write(data)
 	})
 
 	syscall.Unlink(c.listenPath)
 	os.MkdirAll(cniapi.PluginPath, 0700)
 	boltdb.Register()
-	log.Infof("Setting up local store")
 	store, err := localStore()
 	if err != nil {
 		fmt.Errorf("failed to initialize local store: %v", err)
@@ -101,7 +91,7 @@ func (c *CniService) InitCniService(serverCloseChan chan struct{}) error {
 		if err != nil {
 			panic(err)
 		}
-		log.Infof("Libnetwork CNI plugin listening on on %s", c.listenPath)
+		log.Infof("Dnet CNI plugin listening on on %s", c.listenPath)
 		http.Serve(l, router)
 		l.Close()
 		close(serverCloseChan)
@@ -126,31 +116,27 @@ func (c *CniService) GetStore() datastore.DataStore {
 	return c.store
 }
 
-func (c *CniService) getCniMetadataFromStore(podName, podNamespace string) (*cnistore.CniStore, error) {
+func (c *CniService) getCniMetadataFromStore(podName, podNamespace string) (*cnistore.CniMetadata, error) {
 	store := c.GetStore()
 	if store == nil {
-		fmt.Printf("store empty \n")
 		return nil, nil
 	}
-	cs := &cnistore.CniStore{PodName: podName, PodNamespace: podNamespace}
-	fmt.Printf("Read from store key: %v\n", cs.Key())
+	cs := &cnistore.CniMetadata{PodName: podName, PodNamespace: podNamespace}
 	if err := store.GetObject(datastore.Key(cs.Key()...), cs); err != nil {
 		if err == datastore.ErrKeyNotFound {
-			fmt.Printf("Key not found !!!! \n")
-			return nil, nil
+			return nil, fmt.Errorf("failed to find cni metadata from store for %s pod %s namespace: %v",
+				podName, podNamespace, err)
 		}
 		return nil, types.InternalErrorf("could not get pools config from store: %v", err)
 	}
 	return cs, nil
 }
 
-func (c *CniService) writeToStore(cs *cnistore.CniStore) error {
+func (c *CniService) writeToStore(cs *cnistore.CniMetadata) error {
 	store := c.GetStore()
 	if store == nil {
-		fmt.Printf("Writing to store. Store Empty \n")
 		return nil
 	}
-	fmt.Printf("Writing to store key: %v\n", cs.Key())
 	err := store.PutObjectAtomic(cs)
 	if err == datastore.ErrKeyModified {
 		return types.RetryErrorf("failed to perform atomic write (%v). retry might fix the error", err)
@@ -158,7 +144,7 @@ func (c *CniService) writeToStore(cs *cnistore.CniStore) error {
 	return err
 }
 
-func (c *CniService) deleteFromStore(cs *cnistore.CniStore) error {
+func (c *CniService) deleteFromStore(cs *cnistore.CniMetadata) error {
 	store := c.GetStore()
 	if store == nil {
 		return nil

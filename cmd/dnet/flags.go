@@ -33,6 +33,10 @@ var (
 			Value: "/etc/default/libnetwork.toml",
 			Usage: "Configuration file",
 		},
+		cli.BoolFlag{
+			Name: "p, -provider-interface",
+			Usage: "Provider for Dnet. Accepted values cni"
+		}
 	}
 )
 

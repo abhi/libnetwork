@@ -34,7 +34,6 @@ func (h *HttpConnection) HttpCall(method, path string, data interface{}, headers
 
 	req.URL.Host = h.Addr
 	req.URL.Scheme = "http"
-	fmt.Printf("Requesting http: %+v", req)
 	httpClient := &http.Client{}
 	resp, err := httpClient.Do(req)
 	statusCode := -1

@@ -46,9 +46,10 @@ func processFlags(c *cli.Context) error {
 	}
 	serverCloseChan := make(chan struct{})
 	if err := cniService.InitCniService(serverCloseChan); err != nil {
-		fmt.Printf("Failed to initialize CNI server: \n", err)
+		logrus.Errorf("Failed to initialize CNI server: %v", err)
 		os.Exit(1)
 	}
+	// Wait on till the server closes
 	<-serverCloseChan
 	return nil
 }

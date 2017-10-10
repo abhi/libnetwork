@@ -43,8 +43,6 @@ func deletePod(w http.ResponseWriter, r *http.Request, c *CniService, vars map[s
 	if err = c.deleteSandbox(sbID); err != nil {
 		return nil, fmt.Errorf("failed to delete sandbox %q for container %q, error:%v", sbID, cniInfo.ContainerID, err)
 	}
-	delete(c.endpointIDStore, cniInfo.ContainerID)
-	delete(c.sandboxIDStore, cniInfo.ContainerID)
 	c.deleteFromStore(cniMetadata)
 	return nil, nil
 }
@@ -63,38 +61,4 @@ func (c *CniService) deleteEndpoint(endpointID string) error {
 	sd := client.ServiceDelete{Name: endpointID, Force: true}
 	_, _, err := netutils.ReadBody(c.dnetConn.HttpCall("DELETE", "/services/"+endpointID, sd, nil))
 	return err
-}
-
-func (c *CniService) lookupSandboxID(containerID string) (string, error) {
-	if id, ok := c.sandboxIDStore[containerID]; ok {
-		return id, nil
-	}
-
-	obj, _, err := netutils.ReadBody(c.dnetConn.HttpCall("GET", fmt.Sprintf("/sandboxes", containerID), nil, nil))
-	//?partial-container-id=%s
-	if err != nil {
-		return "", err
-	}
-
-	var sandboxList []client.SandboxResource
-	err = json.Unmarshal(obj, &sandboxList)
-	if err != nil {
-		return "", err
-	}
-
-	if len(sandboxList) == 0 {
-		return "", fmt.Errorf("sandbox not found")
-	}
-	fmt.Printf("Sandboxes: {%+v} \n,", sandboxList)
-
-	c.sandboxIDStore[containerID] = sandboxList[0].ID
-	return sandboxList[0].ID, nil
-}
-
-func (c *CniService) lookupEndpointID(containerID string) (string, error) {
-	if id, ok := c.endpointIDStore[containerID]; ok {
-		return id, nil
-	}
-	return "", fmt.Errorf("endpoint not found")
-	//TODO: query libnetwork core if the cache doesnt have it.
 }
