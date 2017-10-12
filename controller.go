@@ -186,19 +186,15 @@ func New(cfgOptions ...config.Option) (NetworkController, error) {
 		agentInitDone:   make(chan struct{}),
 		networkLocker:   locker.New(),
 	}
-	logrus.Infof("Abhi: At controller New: %+v ", c)
 
 	if err := c.initStores(); err != nil {
 		return nil, err
 	}
-	logrus.Infof("Abhi: At controller New, After init stores: %+v ", c)
 	c.initDefaultGwNetwork()
-	logrus.Infof("Abhi: At controller New, After init gw: %+v ", c)
 	drvRegistry, err := drvregistry.New(c.getStore(datastore.LocalScope), c.getStore(datastore.GlobalScope), c.RegisterDriver, nil, c.cfg.PluginGetter)
 	if err != nil {
 		return nil, err
 	}
-	logrus.Infof("Abhi: At controller New, After drv registry: %+v ", drvRegistry)
 	for _, i := range getInitializers(c.cfg.Daemon.Experimental) {
 		var dcfg map[string]interface{}
 
@@ -226,7 +222,6 @@ func New(cfgOptions ...config.Option) (NetworkController, error) {
 			logrus.Errorf("Failed to Initialize Discovery : %v", err)
 		}
 	}
-	logrus.Infof("Abhi: At controller New, After discovery initialization %+v ", c)
 
 	c.WalkNetworks(populateSpecial)
 
@@ -239,7 +234,6 @@ func New(cfgOptions ...config.Option) (NetworkController, error) {
 	c.sandboxCleanup(c.cfg.ActiveSandboxes)
 	c.cleanupLocalEndpoints()
 	c.networkCleanup()
-	logrus.Infof("Abhi: At controller New, After cleanup  %+v ", c)
 	if err := c.startExternalKeyListener(); err != nil {
 		return nil, err
 	}

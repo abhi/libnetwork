@@ -23,21 +23,21 @@ spec:
       containers:
       - name: libnetwork-etcd
         env:
-          - name: LIBNETWORK_ETCD_IP 
+          - name: LIBNETWORK_ETCD_IP
             valueFrom:
               fieldRef:
                 fieldPath: status.podIP
         command: ["sh","-c"]
         # Since ETCD will be running only on master for libnetwork using args to start the etcd instance
-        # in order to pass the environment variable for --advertise-client-urls 
-        args: ["/usr/local/bin/etcd --name=libnetwork-etcd --data-dir=/var/etcd/ --listen-client-urls=http://0.0.0.0:6666 --listen-peer-urls=http://0.0.0.0:6667 --advertise-client-urls=http://${LIBNETWORK_ETCD_IP}:6666"]
+        # in order to pass the environment variable for --advertise-client-urls
+        args: ["/usr/local/bin/etcd --name=libnetwork-etcd --data-dir=/var/etcd/ --listen-client-urls=http://0.0.0.0:12389 --listen-peer-urls=http://0.0.0.0:12390 --advertise-client-urls=http://${LIBNETWORK_ETCD_IP}:12389"]
         image: gcr.io/google_containers/etcd-amd64:3.0.17
         livenessProbe:
           failureThreshold: 8
           httpGet:
             host: 127.0.0.1
             path: /health
-            port: 6666 
+            port: 12389
             scheme: HTTP
           initialDelaySeconds: 15
           timeoutSeconds: 15
@@ -61,4 +61,5 @@ spec:
     k8s-app: libnetwork-etcd
   clusterIP: 10.96.0.2
   ports:
-    - port: 6666
+    - port: 12389 
+

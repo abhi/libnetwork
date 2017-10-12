@@ -6,9 +6,11 @@ import (
 	"io/ioutil"
 	"net/http"
 
+	"github.com/sirupsen/logrus"
+
 	"github.com/docker/libnetwork/client"
 	"github.com/docker/libnetwork/netutils"
-	"github.com/docker/libnetwork/pkg/cniapi"
+	"github.com/docker/libnetwork/provider/cni/cniapi"
 )
 
 func deletePod(w http.ResponseWriter, r *http.Request, c *CniService, vars map[string]string) (interface{}, error) {
@@ -26,7 +28,11 @@ func deletePod(w http.ResponseWriter, r *http.Request, c *CniService, vars map[s
 	fmt.Printf("Received delete pod request %+v", cniInfo)
 	cniMetadata, err := c.getCniMetadataFromStore(cniInfo.Metadata["K8S_POD_NAME"], cniInfo.Metadata["K8S_POD_NAMESPACE"])
 	if err != nil {
-		return nil, fmt.Errorf("cni pod data not found in plugin store: %v", err)
+		logrus.Errorf("cni pod data not found in plugin store: %v", err)
+		// If its not found in store we do not have information regarding this pod.
+		// We just return nil. TODO : figure out an alternative if this causes unwanted
+		// issues
+		return nil, nil
 	}
 	sbID := cniMetadata.SandboxID
 	epID := cniMetadata.EndpointID
@@ -48,17 +54,20 @@ func deletePod(w http.ResponseWriter, r *http.Request, c *CniService, vars map[s
 }
 
 func (c *CniService) endpointLeave(sandboxID, endpointID string) error {
-	_, _, err := netutils.ReadBody(c.dnetConn.HttpCall("DELETE", "/services/"+endpointID+"/backend/"+sandboxID, nil, nil))
+	fmt.Printf("Sending EndpointLeave for endpoint %s , sandbox:%s \n", endpointID, sandboxID)
+	_, _, err := netutils.ReadBody(c.dnetConn.HTTPCall("DELETE", "/services/"+endpointID+"/backend/"+sandboxID, nil, nil))
 	return err
 }
 
 func (c *CniService) deleteSandbox(sandboxID string) error {
-	_, _, err := netutils.ReadBody(c.dnetConn.HttpCall("DELETE", "/sandboxes/"+sandboxID, nil, nil))
+	fmt.Printf("Sending deleteSandbox sandbox:%s \n", sandboxID)
+	_, _, err := netutils.ReadBody(c.dnetConn.HTTPCall("DELETE", "/sandboxes/"+sandboxID, nil, nil))
 	return err
 }
 
 func (c *CniService) deleteEndpoint(endpointID string) error {
+	fmt.Printf("Sending deleteEndpoint for endpoint %s \n", endpointID)
 	sd := client.ServiceDelete{Name: endpointID, Force: true}
-	_, _, err := netutils.ReadBody(c.dnetConn.HttpCall("DELETE", "/services/"+endpointID, sd, nil))
+	_, _, err := netutils.ReadBody(c.dnetConn.HTTPCall("DELETE", "/services/"+endpointID, sd, nil))
 	return err
 }

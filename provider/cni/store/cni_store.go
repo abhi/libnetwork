@@ -14,6 +14,7 @@ const (
 	cniPrefix = "cni"
 )
 
+// CniMetadata holds the cni metadata information for a pod
 type CniMetadata struct {
 	PodName          string
 	PodNamespace     string
@@ -71,10 +72,12 @@ func (cs *CniMetadata) Skip() bool {
 	return false
 }
 
+// New returns a new cnimetada KVObjects
 func (cs *CniMetadata) New() datastore.KVObject {
 	return &CniMetadata{}
 }
 
+// CopyTo copy from source to destination KBObject
 func (cs *CniMetadata) CopyTo(o datastore.KVObject) error {
 	dstCs := o.(*CniMetadata)
 	dstCs.PodName = cs.PodName
@@ -91,6 +94,7 @@ func (cs *CniMetadata) DataScope() string {
 	return datastore.LocalScope
 }
 
+// CopySandboxMetadata creates a sandbox metadata
 func CopySandboxMetadata(sbConfig client.SandboxCreate, externalKey string) api.SandboxMetadata {
 	var meta api.SandboxMetadata
 	meta.ContainerID = sbConfig.ContainerID

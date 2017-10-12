@@ -112,6 +112,7 @@ type extraHost struct {
 	Address string `json:"address"`
 }
 
+// SandboxMetadata holds the metadata related to sandox (config)
 type SandboxMetadata struct {
 	ContainerID       string                `json:"container_id"`
 	HostName          string                `json:"host_name"`

@@ -15,27 +15,51 @@ import (
 	"github.com/containernetworking/plugins/pkg/ns"
 	log "github.com/sirupsen/logrus"
 
+	"github.com/docker/libnetwork"
 	"github.com/docker/libnetwork/api"
 )
 
 const (
-	AddPodUrl     = "/AddPod"
-	DelPodUrl     = "/DelPod"
+	// AddPodURL url endpoint to add pod
+	AddPodURL = "/AddPod"
+	// DelPodURL url endpoint to delete pod
+	DelPodURL = "/DelPod"
+	// GetActivePods url endpoint to fetch active pod sandboxes
 	GetActivePods = "/ActivePods"
-	DnetCNISock   = "/var/run/cniserver.sock"
-	PluginPath    = "/run/libnetwork"
+	// DnetCNISock is dnet cni sidecar sock file
+	DnetCNISock = "/var/run/cniserver.sock"
 )
 
+// DnetCniClient  is the cni client connection information
 type DnetCniClient struct {
 	url        string
 	httpClient *http.Client
 }
 
+// NetworkConf is the cni network configuration information
+type NetworkConf struct {
+	CNIVersion   string          `json:"cniVersion,omitempty"`
+	Name         string          `json:"name,omitempty"`
+	Type         string          `json:"type,omitempty"`
+	Capabilities map[string]bool `json:"capabilities,omitempty"`
+	IPAM         *IPAMConf       `json:"ipam,omitempty"`
+	DNS          types.DNS       `json:"dns"`
+}
+
+// IPAMConf is the cni network IPAM configuration information
+type IPAMConf struct {
+	Type          string `json:"type,omitempty"`
+	PreferredPool string `json:"preferred-pool,omitempty"`
+	SubPool       string `json:"sub-pool,omitempty"`
+	Gateway       string `json:"gateway,omitempty"`
+}
+
+// CniInfo represents the cni information for a cni transaction
 type CniInfo struct {
 	ContainerID string
 	NetNS       string
 	IfName      string
-	NetConf     types.NetConf
+	NetConf     NetworkConf
 	Metadata    map[string]string
 }
 
@@ -44,6 +68,7 @@ func unixDial(proto, addr string) (conn net.Conn, err error) {
 	return net.Dial("unix", sock)
 }
 
+// NewDnetCniClient returns a well formed cni client
 func NewDnetCniClient() *DnetCniClient {
 	c := new(DnetCniClient)
 	c.url = "http://localhost"
@@ -59,7 +84,7 @@ func NewDnetCniClient() *DnetCniClient {
 func (l *DnetCniClient) SetupPod(args *skel.CmdArgs) (*current.Result, error) {
 	var data current.Result
 	log.Infof("Sending Setup Pod request %+v", args)
-	podNetInfo, err := validatePodNetworkInfo(args)
+	podNetInfo, err := validatePodNetworkInfo(args, true)
 	if err != nil {
 		return nil, fmt.Errorf("failed to valid cni arguments, error: %v", err)
 	}
@@ -68,7 +93,7 @@ func (l *DnetCniClient) SetupPod(args *skel.CmdArgs) (*current.Result, error) {
 		return nil, err
 	}
 	body := bytes.NewBuffer(buf)
-	url := l.url + AddPodUrl
+	url := l.url + AddPodURL
 	r, err := l.httpClient.Post(url, "application/json", body)
 	if err != nil {
 		return nil, err
@@ -113,7 +138,7 @@ func (l *DnetCniClient) SetupPod(args *skel.CmdArgs) (*current.Result, error) {
 // container in the pod.
 func (l *DnetCniClient) TearDownPod(args *skel.CmdArgs) error {
 	log.Infof("Sending Teardown Pod request %+v", args)
-	podNetInfo, err := validatePodNetworkInfo(args)
+	podNetInfo, err := validatePodNetworkInfo(args, false)
 	if err != nil {
 		return fmt.Errorf("failed to validate cni arguments, error: %v", err)
 	}
@@ -122,17 +147,17 @@ func (l *DnetCniClient) TearDownPod(args *skel.CmdArgs) error {
 		return err
 	}
 	body := bytes.NewBuffer(buf)
-	url := l.url + DelPodUrl
+	url := l.url + DelPodURL
 	r, err := l.httpClient.Post(url, "application/json", body)
-	defer r.Body.Close()
 	if err != nil {
 		return err
 	}
+	defer r.Body.Close()
 	return nil
 }
 
-// GetActivePods returns a list of active pods and their sandboxIDs
-func (l *DnetCniClient) GetActiveSandboxes() (map[string]api.SandboxMetadata, error) {
+// FetchActiveSandboxes returns a list of active pods and their sandboxIDs
+func (l *DnetCniClient) FetchActiveSandboxes() (map[string]interface{}, error) {
 	log.Infof("Requesting for for active sandboxes")
 	var sandboxes map[string]api.SandboxMetadata
 	url := l.url + GetActivePods
@@ -149,36 +174,52 @@ func (l *DnetCniClient) GetActiveSandboxes() (map[string]api.SandboxMetadata, er
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode http response: %v", err)
 	}
-
-	return sandboxes, nil
+	result := make(map[string]interface{})
+	for sb, meta := range sandboxes {
+		result[sb] = parseConfigOptions(meta)
+	}
+	return result, nil
 }
 
-func validatePodNetworkInfo(args *skel.CmdArgs) (*CniInfo, error) {
+func parseConfigOptions(meta api.SandboxMetadata) []libnetwork.SandboxOption {
+	var sbOptions []libnetwork.SandboxOption
+	if meta.UseExternalKey {
+		sbOptions = append(sbOptions, libnetwork.OptionUseExternalKey())
+	}
+	if meta.ExternalKey != "" {
+		sbOptions = append(sbOptions, libnetwork.OptionExternalKey(meta.ExternalKey))
+	}
+	return sbOptions
+}
+
+func validatePodNetworkInfo(args *skel.CmdArgs, add bool) (*CniInfo, error) {
 	rt := new(CniInfo)
 	if args.ContainerID == "" {
 		return nil, fmt.Errorf("containerID empty")
 	}
 	rt.ContainerID = args.ContainerID
-	if args.Netns == "" {
-		return nil, fmt.Errorf("network namespace not present")
+	if add {
+		if args.Netns == "" {
+			return nil, fmt.Errorf("network namespace not present")
+		}
+		_, err := ns.GetNS(args.Netns)
+		if err != nil {
+			return nil, err
+		}
+		rt.NetNS = args.Netns
 	}
-	_, err := ns.GetNS(args.Netns)
-	if err != nil {
-		return nil, err
-	}
-	rt.NetNS = args.Netns
 	if args.IfName == "" {
 		rt.IfName = "eth1"
 	} else {
 		rt.IfName = args.IfName
 	}
 	var netConf struct {
-		types.NetConf
+		NetworkConf
 	}
 	if err := json.Unmarshal(args.StdinData, &netConf); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal network configuration :%v", err)
 	}
-	rt.NetConf = netConf.NetConf
+	rt.NetConf = netConf.NetworkConf
 	if args.Args != "" {
 		rt.Metadata = getMetadataFromArgs(args.Args)
 	}

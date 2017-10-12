@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"os"
 	"syscall"
 	"time"
 
@@ -18,26 +17,24 @@ import (
 
 	"github.com/docker/libnetwork/datastore"
 	"github.com/docker/libnetwork/netutils"
-	"github.com/docker/libnetwork/pkg/cniapi"
-	cnistore "github.com/docker/libnetwork/pkg/store"
+	"github.com/docker/libnetwork/provider/cni/cniapi"
+	cnistore "github.com/docker/libnetwork/provider/cni/store"
 	"github.com/docker/libnetwork/types"
 )
 
-const (
-	CniServicePort = 9005
-)
-
+// CniService hold the cni service information
 type CniService struct {
 	listenPath  string
-	dnetConn    *netutils.HttpConnection
+	dnetConn    *netutils.HTTPConnection
 	store       datastore.DataStore
 	k8ClientSet *kubernetes.Clientset
 }
 
+// NewCniService returns a new cni service instance
 func NewCniService(sock string, dnetIP string, dnetPort string) (*CniService, error) {
-	dnetUrl := dnetIP + ":" + dnetPort
+	dnetURL := dnetIP + ":" + dnetPort
 	c := new(CniService)
-	c.dnetConn = &netutils.HttpConnection{Addr: dnetUrl, Proto: "tcp"}
+	c.dnetConn = &netutils.HTTPConnection{Addr: dnetURL, Proto: "tcp"}
 	c.listenPath = sock
 	return c, nil
 }
@@ -47,8 +44,8 @@ func (c *CniService) InitCniService(serverCloseChan chan struct{}) error {
 	log.Infof("Starting CNI server")
 	router := mux.NewRouter()
 	t := router.Methods("POST").Subrouter()
-	t.HandleFunc(cniapi.AddPodUrl, MakeHTTPHandler(c, addPod))
-	t.HandleFunc(cniapi.DelPodUrl, MakeHTTPHandler(c, deletePod))
+	t.HandleFunc(cniapi.AddPodURL, MakeHTTPHandler(c, addPod))
+	t.HandleFunc(cniapi.DelPodURL, MakeHTTPHandler(c, deletePod))
 
 	t = router.Methods("GET").Subrouter()
 	t.HandleFunc(cniapi.GetActivePods, func(w http.ResponseWriter, r *http.Request) {
@@ -67,11 +64,10 @@ func (c *CniService) InitCniService(serverCloseChan chan struct{}) error {
 	})
 
 	syscall.Unlink(c.listenPath)
-	os.MkdirAll(cniapi.PluginPath, 0700)
 	boltdb.Register()
 	store, err := localStore()
 	if err != nil {
-		fmt.Errorf("failed to initialize local store: %v", err)
+		return fmt.Errorf("failed to initialize local store: %v", err)
 	}
 	c.store = store
 	// creates the in-cluster config
@@ -112,6 +108,7 @@ func localStore() (datastore.DataStore, error) {
 	})
 }
 
+// GetStore returns store instance
 func (c *CniService) GetStore() datastore.DataStore {
 	return c.store
 }

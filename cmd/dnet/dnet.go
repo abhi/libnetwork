@@ -34,7 +34,8 @@ import (
 	"github.com/docker/libnetwork/netlabel"
 	"github.com/docker/libnetwork/netutils"
 	"github.com/docker/libnetwork/options"
-	"github.com/docker/libnetwork/pkg/cniapi"
+	"github.com/docker/libnetwork/provider"
+	"github.com/docker/libnetwork/provider/cni/cniapi"
 	"github.com/docker/libnetwork/types"
 )
 
@@ -44,11 +45,12 @@ const (
 	// DefaultHTTPPort is the default http port used by dnet
 	DefaultHTTPPort = 2389
 	// DefaultUnixSocket exported
-	DefaultUnixSocket = "/var/run/dnet.sock"
-	cfgFileEnv        = "LIBNETWORK_CFG"
-	defaultCfgFile    = "/etc/default/libnetwork.toml"
-	defaultHeartbeat  = time.Duration(10) * time.Second
-	ttlFactor         = 2
+	DefaultUnixSocket      = "/var/run/dnet.sock"
+	cfgFileEnv             = "LIBNETWORK_CFG"
+	defaultCfgFile         = "/etc/default/libnetwork.toml"
+	defaultHeartbeat       = time.Duration(10) * time.Second
+	ttlFactor              = 2
+	defaultProviderTimeout = 120 // default time to fetch state from provider
 )
 
 var epConn *dnetConnection
@@ -242,7 +244,7 @@ func createDefaultNetwork(c libnetwork.NetworkController) {
 }
 
 type dnetConnection struct {
-	conn          *netutils.HttpConnection
+	conn          *netutils.HTTPConnection
 	Orchestration *NetworkOrchestration
 	configEvent   chan cluster.ConfigEventType
 }
@@ -255,7 +257,7 @@ type NetworkOrchestration struct {
 	Peer    string
 }
 
-func (d *dnetConnection) dnetDaemon(cfgFile string) error {
+func (d *dnetConnection) dnetDaemon(cfgFile string, provider string) error {
 	if err := startTestDriver(); err != nil {
 		return fmt.Errorf("failed to start test driver: %v", err)
 	}
@@ -265,10 +267,14 @@ func (d *dnetConnection) dnetDaemon(cfgFile string) error {
 	if err == nil {
 		cOptions, err = processConfig(cfg)
 		if err != nil {
-			fmt.Errorf("failed to process config: %v", err)
+			return fmt.Errorf("failed to process config: %v", err)
 		}
 	} else {
-		logrus.Errorf("failed to parse config: %v", err)
+		return fmt.Errorf("failed to parse config: %v", err)
+	}
+
+	if provider != "" {
+		cfg.Daemon.Provider = attachDnetProvider(provider)
 	}
 
 	bridgeConfig := options.Generic{
@@ -280,25 +286,19 @@ func (d *dnetConnection) dnetDaemon(cfgFile string) error {
 
 	cOptions = append(cOptions, config.OptionDriverConfig("bridge", bridgeOption))
 
-	c := cniapi.NewDnetCniClient()
 	// If this is a restore ,then fetch active sandboxes from api server.
-	var sbOptions config.Option
-	x := time.Duration(2)
-	for {
-		sbOptions, err = fetchActiveSandboxes(c)
-		if err == nil {
-			break
+	if cfg.Daemon.Provider != nil {
+		sbOptions, err := fetchActiveSandboxes(cfg.Daemon.Provider)
+		if err != nil {
+			return err
 		}
-		logrus.Errorf("failed to fetch active sandbox: %b", err)
-		time.Sleep(x * time.Second)
-		x = x * 2
-	}
-	if sbOptions != nil {
-		cOptions = append(cOptions, sbOptions)
+		if sbOptions != nil {
+			cOptions = append(cOptions, sbOptions)
+		}
 	}
 	controller, err := libnetwork.New(cOptions...)
 	if err != nil {
-		fmt.Println("Error starting dnetDaemon :", err)
+		fmt.Println("Error starting DnetDaemon :", err)
 		return err
 	}
 	controller.SetClusterProvider(d)
@@ -457,7 +457,7 @@ func newDnetConnection(val string) (*dnetConnection, error) {
 	}
 
 	return &dnetConnection{
-		&netutils.HttpConnection{
+		&netutils.HTTPConnection{
 			Proto: protoAddrParts[0],
 			Addr:  protoAddrParts[1],
 		},
@@ -478,26 +478,33 @@ func ipamOption(bridgeName string) libnetwork.NetworkOption {
 	return nil
 }
 
-func fetchActiveSandboxes(c *cniapi.DnetCniClient) (config.Option, error) {
-	sbs, err := c.GetActiveSandboxes()
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch active sandboxes: %v", err)
+func attachDnetProvider(provider string) provider.DnetProvider {
+	switch provider {
+	case "cni":
+		return cniapi.NewDnetCniClient()
+	default:
+		return nil
 	}
-	result := make(map[string]interface{})
-	for sb, meta := range sbs {
-		result[sb] = parseConfigOptions(meta)
-	}
-
-	return config.OptionActiveSandboxes(result), nil
 }
 
-func parseConfigOptions(meta api.SandboxMetadata) []libnetwork.SandboxOption {
-	var sbOptions []libnetwork.SandboxOption
-	if meta.UseExternalKey {
-		sbOptions = append(sbOptions, libnetwork.OptionUseExternalKey())
+func fetchActiveSandboxes(provider provider.DnetProvider) (config.Option, error) {
+	x := time.Duration(2 * time.Second)
+	var err error
+	var sbOptions map[string]interface{}
+	for x < defaultProviderTimeout {
+		sbOptions, err = provider.FetchActiveSandboxes()
+		if err == nil {
+			goto success
+		}
+		logrus.Errorf("Retry:failed to fetch active sandbox: %b", err)
+		time.Sleep(x * time.Second)
+		x = x * 2
 	}
-	if meta.ExternalKey != "" {
-		sbOptions = append(sbOptions, libnetwork.OptionExternalKey(meta.ExternalKey))
+	return nil, fmt.Errorf("failed to fetch active sandbox: %b", err)
+success:
+	logrus.Infof("Active sandboxes are: {%+v}", sbOptions)
+	if len(sbOptions) != 0 {
+		return config.OptionActiveSandboxes(sbOptions), nil
 	}
-	return sbOptions
+	return nil, nil
 }

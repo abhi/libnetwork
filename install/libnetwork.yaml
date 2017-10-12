@@ -6,13 +6,54 @@ metadata:
   namespace: kube-system
 
 ---
+
+apiVersion: rbac.authorization.k8s.io/v1beta1
+kind: ClusterRoleBinding
+metadata:
+  name: libnetwork
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: libnetwork
+subjects:
+- kind: ServiceAccount
+  name: libnetwork
+  namespace: kube-system
+---
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1beta1
+metadata:
+  name: libnetwork
+  namespace: kube-system
+rules:
+  - apiGroups:
+    - ""
+    - extensions
+    resources:
+      - pods
+      - nodes
+      - namespaces
+    verbs:
+      - get
+      - list
+      - update
+---
 kind: ConfigMap
 apiVersion: v1
 metadata:
   name: dnet-config
   namespace: kube-system
 data:
-  cluster_store: "etcd://10.96.0.2:6666"
+  cluster_store: "etcd://10.96.0.2:12389"
+  cni_config: |-
+    {
+      "cniVersion": "0.2.0",
+      "name": "dnet-bridge",
+      "type": "dnet-cni",
+      "ipam": {
+              "preferred-pool": "10.22.0.0/16"
+      }
+    }
 
 ---
 
@@ -41,7 +82,7 @@ spec:
       serviceAccountName: libnetwork
       containers:
         - name: libnetwork-dnet
-          image: abhinandan03/libdnet:test2
+          image: abhinandan03/dnet:0.1.0
           env:
             - name: DNET_ADDRESS
               valueFrom:
@@ -52,8 +93,6 @@ spec:
                 configMapKeyRef:
                   name: dnet-config
                   key: cluster_store
-            - name: DNET_PROVIDER_INTERFACE
-              value: "cni"
           securityContext:
             privileged: true
           volumeMounts:
@@ -67,12 +106,17 @@ spec:
               mountPath: /run/netns/
 
         - name: libnetwork-cniserver
-          image: abhinandan03/cniserver:test2
+          image: abhinandan03/cniserver:0.1.0
           env:
             - name: DNET_ADDRESS
               valueFrom:
                 fieldRef:
                   fieldPath: status.podIP
+            - name: DNET_CNI_CONF
+              valueFrom:
+                configMapKeyRef:
+                  name: dnet-config
+                  key: cni_config
           securityContext:
             privileged: true
 

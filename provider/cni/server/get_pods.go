@@ -24,6 +24,6 @@ func (c *CniService) getPods() (map[string]interface{}, error) {
 			}
 		}
 	}
-	logrus.Infof("Active Sandboxes: %+v", activeSandboxes, err)
+	logrus.Infof("Active Sandboxes: %+v", activeSandboxes)
 	return activeSandboxes, nil
 }

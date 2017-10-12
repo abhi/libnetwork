@@ -191,7 +191,6 @@ func (sb *sandbox) storeDelete() error {
 }
 
 func (c *controller) sandboxCleanup(activeSandboxes map[string]interface{}) {
-	logrus.Infof("Abhi: sandboxCleanup: %+v ", activeSandboxes)
 	store := c.getStore(datastore.LocalScope)
 	if store == nil {
 		logrus.Error("Could not find local scope store while trying to cleanup sandboxes")
@@ -211,7 +210,6 @@ func (c *controller) sandboxCleanup(activeSandboxes map[string]interface{}) {
 
 	for _, kvo := range kvol {
 		sbs := kvo.(*sbState)
-		logrus.Infof("Abhi sbs: %+v ", sbs)
 		sb := &sandbox{
 			id:                 sbs.ID,
 			controller:         sbs.c,
@@ -232,7 +230,6 @@ func (c *controller) sandboxCleanup(activeSandboxes map[string]interface{}) {
 			}
 		}
 
-		logrus.Infof("Abhi sbs: %+v ", sbs)
 		msg := " for cleanup"
 		create := true
 		isRestore := false
@@ -246,9 +243,8 @@ func (c *controller) sandboxCleanup(activeSandboxes map[string]interface{}) {
 			create = !sb.config.useDefaultSandBox
 			heap.Init(&sb.endpoints)
 		}
-		logrus.Infof("Abhi sandbox cleanup isRestore:%+v Key:%v,create:%v", isRestore, sb.Key(), create)
+		logrus.Debugf("Sandbox restore isRestore:%+v Key:%v,create:%v", isRestore, sb.Key(), create)
 		if sb.config.useExternalKey {
-			logrus.Infof("External Key: %s , sb.Key():%s", sb.config.externalKey, sb.Key())
 			sb.osSbox, err = osl.GetSandboxForExternalKey(sb.config.externalKey, sb.Key())
 			if err != nil {
 				logrus.Errorf("failed to get sandbox for external key: %v", err)

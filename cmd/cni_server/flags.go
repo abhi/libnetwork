@@ -5,8 +5,9 @@ import (
 	"os"
 
 	"github.com/codegangsta/cli"
-	cniserver "github.com/docker/libnetwork/pkg/server"
 	"github.com/sirupsen/logrus"
+
+	cniserver "github.com/docker/libnetwork/provider/cni/server"
 )
 
 var (

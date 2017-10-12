@@ -6,8 +6,9 @@ import (
 	"github.com/containernetworking/cni/pkg/skel"
 	"github.com/containernetworking/cni/pkg/types"
 	"github.com/containernetworking/cni/pkg/version"
-	"github.com/docker/libnetwork/pkg/cniapi"
 	log "github.com/sirupsen/logrus"
+
+	"github.com/docker/libnetwork/provider/cni/cniapi"
 )
 
 func cmdAdd(args *skel.CmdArgs) error {

@@ -8,13 +8,13 @@ import (
 	"net"
 	"net/http"
 	"reflect"
+	"strings"
 
-	"github.com/containernetworking/cni/pkg/types"
 	"github.com/containernetworking/cni/pkg/types/current"
 	"github.com/docker/libnetwork/client"
 	"github.com/docker/libnetwork/netutils"
-	"github.com/docker/libnetwork/pkg/cniapi"
-	cnistore "github.com/docker/libnetwork/pkg/store"
+	"github.com/docker/libnetwork/provider/cni/cniapi"
+	cnistore "github.com/docker/libnetwork/provider/cni/store"
 )
 
 func addPod(w http.ResponseWriter, r *http.Request, c *CniService, vars map[string]string) (_ interface{}, retErr error) {
@@ -101,7 +101,7 @@ func addPod(w http.ResponseWriter, r *http.Request, c *CniService, vars map[stri
 
 func (c *CniService) createSandbox(ContainerID string) (client.SandboxCreate, string, error) {
 	sc := client.SandboxCreate{ContainerID: ContainerID, UseExternalKey: true}
-	obj, _, err := netutils.ReadBody(c.dnetConn.HttpCall("POST", "/sandboxes", sc, nil))
+	obj, _, err := netutils.ReadBody(c.dnetConn.HTTPCall("POST", "/sandboxes", sc, nil))
 	if err != nil {
 		return client.SandboxCreate{}, "", err
 	}
@@ -114,40 +114,39 @@ func (c *CniService) createSandbox(ContainerID string) (client.SandboxCreate, st
 	return sc, replyID, nil
 }
 
-func (c *CniService) createEndpoint(ContainerID string, netConfig types.NetConf) (client.EndpointInfo, error) {
+func (c *CniService) createEndpoint(ContainerID string, netConfig cniapi.NetworkConf) (client.EndpointInfo, error) {
 	var ep client.EndpointInfo
 	// Create network if it doesnt exist. Need to handle refcount to delete
-	// network on last pod delete. Also handle different network types and option
+	// network on last pod delete.
 	if !c.networkExists(netConfig.Name) {
-		if err := c.createNetwork(netConfig.Name, "overlay"); err != nil {
+		if err := c.createNetwork(netConfig); err != nil && !strings.Contains(err.Error(), "already exists") {
 			return ep, err
 		}
 	}
 
 	sc := client.ServiceCreate{Name: ContainerID, Network: netConfig.Name, DisableResolution: true}
-	obj, _, err := netutils.ReadBody(c.dnetConn.HttpCall("POST", "/services", sc, nil))
+	obj, _, err := netutils.ReadBody(c.dnetConn.HTTPCall("POST", "/services", sc, nil))
 	if err != nil {
 		return ep, err
 	}
-	log.Errorf("createEndpoint result:%+v\n", ep)
 	err = json.Unmarshal(obj, &ep)
 	return ep, err
 }
 
 func (c *CniService) endpointJoin(sandboxID, endpointID, netns string) (retErr error) {
 	nc := client.ServiceAttach{SandboxID: sandboxID, SandboxKey: netns}
-	_, _, err := netutils.ReadBody(c.dnetConn.HttpCall("POST", "/services/"+endpointID+"/backend", nc, nil))
+	_, _, err := netutils.ReadBody(c.dnetConn.HTTPCall("POST", "/services/"+endpointID+"/backend", nc, nil))
 	return err
 }
 
-func (c *CniService) networkExists(networkName string) bool {
-	obj, statusCode, err := netutils.ReadBody(c.dnetConn.HttpCall("GET", "/networks?name="+networkName, nil, nil))
+func (c *CniService) networkExists(networkID string) bool {
+	obj, statusCode, err := netutils.ReadBody(c.dnetConn.HTTPCall("GET", "/networks?partial-id="+networkID, nil, nil))
 	if err != nil {
-		fmt.Printf("%s network does not exists \n", networkName)
+		log.Debugf("%s network does not exist:%v \n", networkID, err)
 		return false
 	}
 	if statusCode != http.StatusOK {
-		fmt.Printf("%s network does not exists \n", networkName)
+		log.Debugf("%s network does not exist \n", networkID)
 		return false
 	}
 	var list []*client.NetworkResource
@@ -159,14 +158,28 @@ func (c *CniService) networkExists(networkName string) bool {
 }
 
 // createNetwork is a very simple utility to create a default network
-// if not present. This needs to be expanded into a more full utility function
-func (c *CniService) createNetwork(networkName string, driver string) error {
-	fmt.Printf("Creating a network %s driver: %s \n", networkName, driver)
+// if not present.
+//TODO: Need to watch out for parallel createnetwork calls on multiple nodes
+func (c *CniService) createNetwork(netConf cniapi.NetworkConf) error {
+	log.Infof("Creating network %+v \n", netConf)
 	driverOpts := make(map[string]string)
 	driverOpts["hostaccess"] = ""
-	nc := client.NetworkCreate{Name: networkName, NetworkType: driver,
+	nc := client.NetworkCreate{Name: netConf.Name, ID: netConf.Name, NetworkType: getNetworkType(netConf.Type),
 		DriverOpts: driverOpts}
-	obj, _, err := netutils.ReadBody(c.dnetConn.HttpCall("POST", "/networks", nc, nil))
+	if ipam := netConf.IPAM; ipam != nil {
+		cfg := client.IPAMConf{}
+		if ipam.PreferredPool != "" {
+			cfg.PreferredPool = ipam.PreferredPool
+		}
+		if ipam.SubPool != "" {
+			cfg.SubPool = ipam.SubPool
+		}
+		if ipam.Gateway != "" {
+			cfg.Gateway = ipam.Gateway
+		}
+		nc.IPv4Conf = []client.IPAMConf{cfg}
+	}
+	obj, _, err := netutils.ReadBody(c.dnetConn.HTTPCall("POST", "/networks", nc, nil))
 	if err != nil {
 		return err
 	}
@@ -175,5 +188,21 @@ func (c *CniService) createNetwork(networkName string, driver string) error {
 	if err != nil {
 		return err
 	}
+	fmt.Printf("Network creation succeeded: %v", replyID)
 	return nil
+}
+
+func getNetworkType(networkType string) string {
+	switch networkType {
+	case "dnet-overlay":
+		return "overlay"
+	case "dnet-bridge":
+		return "bridge"
+	case "dnet-ipvlan":
+		return "ipvlan"
+	case "dnet-macvlan":
+		return "macvlan"
+	default:
+		return "overlay"
+	}
 }
