@@ -1,0 +1,65 @@
+---
+apiVersion: extensions/v1beta1
+kind: DaemonSet
+metadata:
+  name: libnetwork-etcd
+  namespace: kube-system
+  labels:
+    k8s-app: libnetwork-etcd
+spec:
+  template:
+    metadata:
+      labels:
+        k8s-app: libnetwork-etcd
+      annotations:
+        scheduler.alpha.kubernetes.io/critical-pod: ''
+    spec:
+      tolerations:
+      - key: node-role.kubernetes.io/master
+        effect: NoSchedule
+      nodeSelector:
+        node-role.kubernetes.io/master: ""
+      hostNetwork: true
+      containers:
+      - name: libnetwork-etcd
+        env:
+          - name: LIBNETWORK_ETCD_IP
+            valueFrom:
+              fieldRef:
+                fieldPath: status.podIP
+        command: ["sh","-c"]
+        # Since ETCD will be running only on master for libnetwork using args to start the etcd instance
+        # in order to pass the environment variable for --advertise-client-urls
+        args: ["/usr/local/bin/etcd --name=libnetwork-etcd --data-dir=/var/etcd/ --listen-client-urls=http://0.0.0.0:12389 --listen-peer-urls=http://0.0.0.0:12390 --advertise-client-urls=http://${LIBNETWORK_ETCD_IP}:12389"]
+        image: gcr.io/google_containers/etcd-amd64:3.0.17
+        livenessProbe:
+          failureThreshold: 8
+          httpGet:
+            host: 127.0.0.1
+            path: /health
+            port: 12389
+            scheme: HTTP
+          initialDelaySeconds: 15
+          timeoutSeconds: 15
+        volumeMounts:
+        - name: var-etcd
+          mountPath: /var/lib/etcd
+      volumes:
+        - name: var-etcd
+          hostPath:
+            path: /var/libnetwork/etcd
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    k8s-app: libnetwork-etcd
+  name: libnetwork-etcd
+  namespace: kube-system
+spec:
+  selector:
+    k8s-app: libnetwork-etcd
+  clusterIP: 10.96.0.2
+  ports:
+    - port: 12389 
+
